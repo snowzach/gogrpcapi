@@ -1,0 +1,11 @@
+.vscode
+api
+mocks
+bindata.go
+server.crt
+server.key
+*.pb.go
+*.pb.gw.go
+*.swagger.json
+
+

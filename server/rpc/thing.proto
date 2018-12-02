@@ -1,0 +1,49 @@
+syntax="proto3";
+package server;
+
+import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
+
+import "gogrpcapi/thing.proto";
+
+option go_package = "github.com/snowzach/gogrpcapi/server/rpc";
+
+service ThingRPC {
+
+    rpc ThingFind(google.protobuf.Empty) returns (ThingFindResponse) {
+        option (google.api.http) = {
+            get: "/things"
+        };
+    }
+
+    rpc ThingGet(ThingId) returns (gogrpcapi.Thing) {
+        option (google.api.http) = {
+            get: "/things/{id}"
+        };
+    }
+
+    rpc ThingSave(gogrpcapi.Thing) returns (ThingId) {
+        option (google.api.http) = {
+            post: "/things"
+            body: "*"
+            additional_bindings: {
+                post: "/things/{id}"
+                body: "*"
+            }
+        };
+    }
+
+    rpc ThingDelete(ThingId) returns (google.protobuf.Empty) {
+        option (google.api.http) = {
+            delete: "/things/{id}"
+        };
+    }
+}
+
+message ThingId {
+    string id = 1;
+}
+
+message ThingFindResponse {
+    repeated gogrpcapi.Thing data = 1;
+}
