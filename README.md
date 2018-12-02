@@ -1,6 +1,6 @@
 # Base API Example
 
-This API example is a framework for a REST API
+This API example is a framework for a gRPC API with a REST Gateway. It supports gRPC or HTTP/REST on the same port.
 
 ## Compiling
 This is designed as a go module aware program and thus requires go 1.11 or better
@@ -27,38 +27,44 @@ LOGGER_LEVEL=debug
 ```
 
 ### Options:
-| Setting                        | Description                                                 | Default               |
-|--------------------------------|-------------------------------------------------------------|-----------------------|
-| logger.level                   | The default logging level                                   | "info"                |
-| logger.encoding                | Logging format (console or json)                            | "console"             |
-| logger.color                   | Enable color in console mode                                | true                  |
-| logger.disable_caller          | Hide the caller source file and line number                 | false                 |
-| logger.disable_stacktrace      | Hide a stacktrace on debug logs                             | true                  |
-| ---                            | ---                                                         | ---                   |
-| server.host                    | The host address to listen on (blank=all addresses)         | ""                    |
-| server.port                    | The port number to listen on                                | 8900                  |
-| server.tls                     | Enable https/tls                                            | false                 |
-| server.devcert                 | Generate a development cert                                 | false                 |
-| server.certfile                | The HTTPS/TLS server certificate                            | "server.crt"          |
-| server.keyfile                 | The HTTPS/TLS server key file                               | "server.key"          |
-| server.log_requests            | Log API requests                                            | true                  |
-| server.profiler_enabled        | Enable the profiler                                         | false                 |
-| server.profiler_path           | Where should the profiler be available                      | "/debug"              |
-| ---                            | ---                                                         | ---                   |
-| fetcher.sleep_between_blocks   | How long to sleep between API failures                      | "100ms"               |
-| fetcher.sleep_between_checks   | How long to sleep between API checks                        | "30s"                 |
-| ---                            | ---                                                         | ---                   |
-| storage.type                   | The database type (supports postgres)                       | "postgres"            |
-| storage.username               | The database username                                       | "postgres"            |
-| storage.password               | The database password                                       | "password"            |
-| storage.host                   | Thos hostname for the database                              | "postgres"            |
-| storage.port                   | The port for the database                                   | 5432                  |
-| storage.database               | The database                                                | "gorestapi"           |
-| storage.sslmode                | The postgres sslmode to use                                 | "disable"             |
-| storage.retries                | How many times to try to reconnect to the database on start | 5                     |
-| storage.sleep_between_retriews | How long to sleep between retries                           | "7s"                  |
-| storage.max_connections        | How many pooled connections to have                         | 80                    |
-| storage.wipe_confirm           | Wipe the database during start                              | false                 |
+| Setting                        | Description                                                 | Default      |
+|--------------------------------|-------------------------------------------------------------|--------------|
+| logger.level                   | The default logging level                                   | "info"       |
+| logger.encoding                | Logging format (console or json)                            | "console"    |
+| logger.color                   | Enable color in console mode                                | true         |
+| logger.disable_caller          | Hide the caller source file and line number                 | false        |
+| logger.disable_stacktrace      | Hide a stacktrace on debug logs                             | true         |
+| ---                            | ---                                                         | ---          |
+| server.host                    | The host address to listen on (blank=all addresses)         | ""           |
+| server.port                    | The port number to listen on                                | 8900         |
+| server.tls                     | Enable https/tls                                            | false        |
+| server.devcert                 | Generate a development cert                                 | false        |
+| server.certfile                | The HTTPS/TLS server certificate                            | "server.crt" |
+| server.keyfile                 | The HTTPS/TLS server key file                               | "server.key" |
+| server.log_requests            | Log API requests                                            | true         |
+| server.profiler_enabled        | Enable the profiler                                         | false        |
+| server.profiler_path           | Where should the profiler be available                      | "/debug"     |
+| ---                            | ---                                                         | ---          |
+| server.rest.enums_as_ints      | gRPC Gateway enums as ints                                  | false        |
+| server.rest.emit_defaults      | gRPC Gateway emit default values                            | true         |
+| server.rest.orig_names         | gRPC Gateway use original names                             | true         |
+| ---                            | ---                                                         | ---          |
+| storage.type                   | The database type (supports postgres)                       | "postgres"   |
+| storage.username               | The database username                                       | "postgres"   |
+| storage.password               | The database password                                       | "password"   |
+| storage.host                   | Thos hostname for the database                              | "postgres"   |
+| storage.port                   | The port for the database                                   | 5432         |
+| storage.database               | The database                                                | "gorestapi"  |
+| storage.sslmode                | The postgres sslmode to use                                 | "disable"    |
+| storage.retries                | How many times to try to reconnect to the database on start | 5            |
+| storage.sleep_between_retriews | How long to sleep between retries                           | "7s"         |
+| storage.max_connections        | How many pooled connections to have                         | 80           |
+| storage.wipe_confirm           | Wipe the database during start                              | false        |
+| ---                            | ---                                                         | ---          |
+| pidfile                        | Write a pidfile (only if specified)                         | ""           |
+| profiler.enabled               | Enable the debug pprof interface                            | "false"      |
+| profiler.host                  | The profiler host address to listen on                      | ""           |
+| profiler.port                  | The profiler port to listen on                              | "6060"       |
 
 ## Data Storage
 Data is stored in a postgres database
