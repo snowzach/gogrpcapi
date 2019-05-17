@@ -68,3 +68,13 @@ test: tools ${PROTOS} ${MIGRATIONDIR}/bindata.go mocks
 deps:
 	# Fetching dependancies...
 	go get -d -v # Adding -u here will break CI
+
+.PHONY: relocate
+relocate:
+        @test ${TARGET} || ( echo ">> TARGET is not set. Use: make relocate TARGET=<target>"; exit 1 )
+        $(eval ESCAPED_PACKAGENAME := $(shell echo "${PACKAGENAME}" | sed -e 's/[\/&]/\\&/g'))
+        $(eval ESCAPED_TARGET := $(shell echo "${TARGET}" | sed -e 's/[\/&]/\\&/g'))
+        # Renaming package ${PACKAGENAME} to ${TARGET}
+        @grep -rlI '${PACKAGENAME}' * | xargs -i@ sed -i 's/${ESCAPED_PACKAGENAME}/${ESCAPED_TARGET}/g' @
+        # Complete...
+        # NOTE: This does not update the git config nor will it update any imports of the root directory of this project.
