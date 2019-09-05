@@ -92,67 +92,12 @@ func loggerHTTPMiddlewareDefault() func(http.Handler) http.Handler {
 	}
 }
 
-func loggerGRPCUnaryStackdriver() grpc.UnaryServerInterceptor {
-	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-		// If this is being called through the grpcgateway, don't log again
-
-		start := time.Now()
-
-		// Call the handler
-		resp, err := handler(ctx, req)
-
-		// Build the Stackdriver HTTPPayload
-		fields := []zapcore.Field{
-			zapdriver.HTTP(&zapdriver.HTTPPayload{
-				RequestMethod: "GRPC Request",
-				RequestURL:    info.FullMethod,
-				Protocol:      "GRPC",
-			}),
-			zap.String("package", "server.grpc"),
-			zap.Duration("duration", time.Since(start)),
-			zap.String("status", status.Code(err).String()),
-		}
-		if err != nil {
-			fields = append(fields, zap.String("error", err.Error()))
-		}
-
-		zap.L().Info("GRPC Request", fields...)
-		return resp, err
-	}
-}
-
-func loggerGRPCStreamStackdriver() grpc.StreamServerInterceptor {
-	return func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-		start := time.Now()
-
-		// Build the Stackdriver HTTPPayload
-		fields := []zapcore.Field{
-			zapdriver.HTTP(&zapdriver.HTTPPayload{
-				RequestMethod: "GRPC Stream",
-				RequestURL:    info.FullMethod,
-				Protocol:      "GRPC",
-			}),
-			zap.String("package", "server.grpc.stream"),
-		}
-		zap.L().Info("GRPC Stream Start", fields...)
-
-		// Call the stream
-		err := handler(srv, ss)
-
-		fields = append(fields,
-			zap.Duration("duration", time.Since(start)),
-			zap.String("status", status.Code(err).String()),
-		)
-		if err != nil {
-			fields = append(fields, zap.String("error", err.Error()))
-		}
-		zap.L().Info("GRPC Stream Complete", fields...)
-		return err
-	}
-}
-
 func loggerGRPCUnaryDefault() grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+		// Don't log the version endpoint
+		if info.FullMethod == "/rpc.VersionRPC/Version" {
+			return handler(ctx, req)
+		}
 		start := time.Now()
 		resp, err := handler(ctx, req)
 		fields := []zapcore.Field{
@@ -185,6 +130,76 @@ func loggerGRPCStreamDefault() grpc.StreamServerInterceptor {
 
 		fields = append(fields,
 			zap.Duration("duration", time.Since(start)),
+			zap.String("status", status.Code(err).String()),
+		)
+		if err != nil {
+			fields = append(fields, zap.String("error", err.Error()))
+		}
+		zap.L().Info("GRPC Stream Complete", fields...)
+		return err
+	}
+}
+
+func loggerGRPCUnaryStackdriver() grpc.UnaryServerInterceptor {
+	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+		// Don't log the version endpoint
+		if info.FullMethod == "/rpc.VersionRPC/Version" {
+			return handler(ctx, req)
+		}
+
+		start := time.Now()
+
+		// Call the handler
+		resp, err := handler(ctx, req)
+
+		// Build the Stackdriver HTTPPayload
+		fields := []zapcore.Field{
+			zapdriver.HTTP(&zapdriver.HTTPPayload{
+				RequestMethod: "GRPC Request",
+				RequestURL:    info.FullMethod,
+				Protocol:      "GRPC",
+				Latency:       fmt.Sprintf("%fs", time.Since(start).Seconds()),
+			}),
+			zap.String("package", "server.grpc"),
+			zap.String("status", status.Code(err).String()),
+		}
+		if err != nil {
+			fields = append(fields, zap.String("error", err.Error()))
+		}
+
+		zap.L().Info("GRPC Request", fields...)
+		return resp, err
+	}
+}
+
+func loggerGRPCStreamStackdriver() grpc.StreamServerInterceptor {
+	return func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+		start := time.Now()
+
+		// Build the Stackdriver HTTPPayload
+		fields := []zapcore.Field{
+			zapdriver.HTTP(&zapdriver.HTTPPayload{
+				RequestMethod: "GRPC Stream Stop",
+				RequestURL:    info.FullMethod,
+				Protocol:      "GRPC",
+			}),
+			zap.String("package", "server.grpc.stream"),
+		}
+		zap.L().Info("GRPC Stream Start", fields...)
+
+		// Call the stream
+		err := handler(srv, ss)
+
+		fields = []zapcore.Field{
+			zapdriver.HTTP(&zapdriver.HTTPPayload{
+				RequestMethod: "GRPC Stream Start",
+				RequestURL:    info.FullMethod,
+				Protocol:      "GRPC",
+				Latency:       fmt.Sprintf("%fs", time.Since(start).Seconds()),
+			}),
+			zap.String("package", "server.grpc.stream"),
+		}
+		fields = append(fields,
 			zap.String("status", status.Code(err).String()),
 		)
 		if err != nil {
