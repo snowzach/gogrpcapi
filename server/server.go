@@ -8,26 +8,21 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"strconv"
 	"strings"
-	"time"
 
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
 
-	"github.com/blendle/zapdriver"
 	"github.com/go-chi/chi"
 	"github.com/go-chi/chi/middleware"
 	"github.com/go-chi/cors"
 	"github.com/go-chi/render"
-	"github.com/golang/protobuf/jsonpb"
 	grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware"
 	gwruntime "github.com/grpc-ecosystem/grpc-gateway/runtime"
 	"github.com/snowzach/certtools"
 	"github.com/snowzach/certtools/autocert"
 	config "github.com/spf13/viper"
 	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/reflection"
@@ -72,144 +67,13 @@ func New(thingStore gogrpcapi.ThingStore) (*Server, error) {
 	if config.GetBool("server.log_requests") {
 		switch config.GetString("logger.encoding") {
 		case "stackdriver":
-			streamInterceptors = append(streamInterceptors, func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-				start := time.Now()
-				fields := []zapcore.Field{
-					zapdriver.HTTP(&zapdriver.HTTPPayload{
-						RequestMethod: "GRPC Stream",
-						RequestURL:    info.FullMethod,
-						Protocol:      "GRPC",
-					}),
-				}
-				zap.L().Info("GRPC Stream Start", fields...)
-				err := handler(srv, ss)
-				fields = append(fields, zap.Duration("duration", time.Since(start)))
-				if err != nil {
-					fields = append(fields, zap.String("error", err.Error()))
-				}
-				zap.L().Info("GRPC Stream Stop", fields...)
-				return err
-			})
-			unaryInterceptors = append(unaryInterceptors, func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-				start := time.Now()
-				resp, err := handler(ctx, req)
-				fields := []zapcore.Field{
-					zapdriver.HTTP(&zapdriver.HTTPPayload{
-						RequestMethod: "GRPC Request",
-						RequestURL:    info.FullMethod,
-						Protocol:      "GRPC",
-					}),
-					zap.Duration("duration", time.Since(start)),
-				}
-				if err != nil {
-					fields = append(fields, zap.String("error", err.Error()))
-				}
-				zap.L().Info("GRPC Request", fields...)
-				return resp, err
-			})
-
-			r.Use(func(next http.Handler) http.Handler {
-				return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					start := time.Now()
-					var requestID string
-					if reqID := r.Context().Value(middleware.RequestIDKey); reqID != nil {
-						requestID = reqID.(string)
-					}
-					ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
-					// Parse the request
-					next.ServeHTTP(ww, r)
-					// Don't log the version endpoint, it's too noisy
-					if r.RequestURI == "/version" {
-						return
-					}
-					// If the remote IP is being proxied, use the real IP
-					remoteIP := r.Header.Get("X-Forwarded-For")
-					if remoteIP == "" {
-						remoteIP = r.RemoteAddr
-					}
-					zap.L().Info("HTTP Request", []zapcore.Field{
-						zapdriver.HTTP(&zapdriver.HTTPPayload{
-							RequestMethod: r.Method,
-							RequestURL:    r.RequestURI,
-							RequestSize:   strconv.FormatInt(r.ContentLength, 10),
-							Status:        ww.Status(),
-							ResponseSize:  strconv.Itoa(ww.BytesWritten()),
-							UserAgent:     r.UserAgent(),
-							RemoteIP:      remoteIP,
-							Referer:       r.Referer(),
-							Latency:       fmt.Sprintf("%fs", time.Since(start).Seconds()),
-							Protocol:      r.Proto,
-						}),
-						zap.String("request-id", requestID),
-					}...)
-				})
-			})
+			unaryInterceptors = append(unaryInterceptors, loggerGRPCUnaryStackdriver())
+			streamInterceptors = append(streamInterceptors, loggerGRPCStreamStackdriver())
+			r.Use(loggerHTTPMiddlewareStackdriver())
 		default:
-			streamInterceptors = append(streamInterceptors, func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-				start := time.Now()
-				fields := []zapcore.Field{
-					zap.String("request", info.FullMethod),
-					zap.String("method", "GRPC Stream"),
-					zap.String("package", "server.request"),
-				}
-				zap.L().Info("GRPC Stream Start", fields...)
-				err := handler(srv, ss)
-				fields = append(fields, zap.Duration("duration", time.Since(start)))
-				if err != nil {
-					fields = append(fields, zap.String("error", err.Error()))
-				}
-				return err
-			})
-			unaryInterceptors = append(unaryInterceptors, func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-				start := time.Now()
-				resp, err := handler(ctx, req)
-				fields := []zapcore.Field{
-					zap.String("request", info.FullMethod),
-					zap.String("method", "GRPC"),
-					zap.String("package", "server.request"),
-					zap.Duration("duration", time.Since(start)),
-				}
-				if err != nil {
-					fields = append(fields, zap.String("error", err.Error()))
-				}
-				zap.L().Info("GRPC Request", fields...)
-				return resp, err
-			})
-
-			r.Use(func(next http.Handler) http.Handler {
-				return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					start := time.Now()
-					var requestID string
-					if reqID := r.Context().Value(middleware.RequestIDKey); reqID != nil {
-						requestID = reqID.(string)
-					}
-					ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
-					next.ServeHTTP(ww, r)
-
-					// Don't log the version endpoint, it's too noisy
-					if r.RequestURI == "/version" {
-						return
-					}
-
-					fields := []zapcore.Field{
-						zap.Int("status", ww.Status()),
-						zap.Duration("duration", time.Since(start)),
-						zap.String("request", r.RequestURI),
-						zap.String("method", r.Method),
-						zap.String("package", "server.request"),
-					}
-					if requestID != "" {
-						fields = append(fields, zap.String("request-id", requestID))
-					}
-					// If we have an x-Forwarded-For header, use that for the remote
-					if forwardedFor := r.Header.Get("X-Forwarded-For"); forwardedFor != "" {
-						fields = append(fields, zap.String("remote", forwardedFor))
-					} else {
-						fields = append(fields, zap.String("remote", r.RemoteAddr))
-					}
-					zap.L().Info("HTTP Request", fields...)
-				})
-			})
+			unaryInterceptors = append(unaryInterceptors, loggerGRPCUnaryDefault())
+			streamInterceptors = append(streamInterceptors, loggerGRPCStreamDefault())
+			r.Use(loggerHTTPMiddlewareDefault())
 		}
 	}
 
@@ -306,12 +170,9 @@ func (s *Server) ListenAndServe() error {
 	}
 
 	// Setup the GRPC gateway
-	grpcGatewayJSONpbMarshaler := gwruntime.JSONPb(jsonpb.Marshaler{
-		EnumsAsInts:  config.GetBool("server.rest.enums_as_ints"),
-		EmitDefaults: config.GetBool("server.rest.emit_defaults"),
-		OrigName:     config.GetBool("server.rest.orig_names"),
-	})
-	grpcGatewayMux := gwruntime.NewServeMux(gwruntime.WithMarshalerOption(gwruntime.MIMEWildcard, &grpcGatewayJSONpbMarshaler))
+	grpcGatewayMux := gwruntime.NewServeMux(
+		gwruntime.WithMarshalerOption(gwruntime.MIMEWildcard, &JSONMarshaler{}), // Use encoding/json for all encoding/decoding
+	)
 	// If the main router did not find and endpoint, pass it to the grpcGateway
 	s.router.NotFound(func(w http.ResponseWriter, r *http.Request) {
 		grpcGatewayMux.ServeHTTP(w, r)
