@@ -5,19 +5,23 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
-	"golang.org/x/net/http2"
-	"golang.org/x/net/http2/h2c"
 	"log"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/h2c"
+
+	"github.com/blendle/zapdriver"
 	"github.com/go-chi/chi"
 	"github.com/go-chi/chi/middleware"
+	"github.com/go-chi/cors"
 	"github.com/go-chi/render"
 	"github.com/golang/protobuf/jsonpb"
-	"github.com/grpc-ecosystem/go-grpc-middleware"
+	grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware"
 	gwruntime "github.com/grpc-ecosystem/grpc-gateway/runtime"
 	"github.com/snowzach/certtools"
 	"github.com/snowzach/certtools/autocert"
@@ -52,40 +56,162 @@ func New(thingStore gogrpcapi.ThingStore) (*Server, error) {
 	r.Use(middleware.RequestID)
 	r.Use(middleware.Recoverer)
 	r.Use(render.SetContentType(render.ContentTypeJSON))
-
-	// Log Requests
-	if config.GetBool("server.log_requests") {
-		r.Use(func(next http.Handler) http.Handler {
-			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				start := time.Now()
-				var requestID string
-				if reqID := r.Context().Value(middleware.RequestIDKey); reqID != nil {
-					requestID = reqID.(string)
-				}
-				ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
-				next.ServeHTTP(ww, r)
-
-				latency := time.Since(start)
-
-				fields := []zapcore.Field{
-					zap.Int("status", ww.Status()),
-					zap.Duration("took", latency),
-					zap.String("remote", r.RemoteAddr),
-					zap.String("request", r.RequestURI),
-					zap.String("method", r.Method),
-					zap.String("package", "server.request"),
-				}
-				if requestID != "" {
-					fields = append(fields, zap.String("request-id", requestID))
-				}
-				zap.L().Info("API Request", fields...)
-			})
-		})
-	}
+	r.Use(cors.New(cors.Options{
+		AllowedOrigins:   []string{"*"},
+		AllowedMethods:   []string{http.MethodHead, http.MethodOptions, http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete, http.MethodPatch},
+		AllowedHeaders:   []string{"*"},
+		AllowCredentials: true,
+		MaxAge:           300,
+	}).Handler)
 
 	// GRPC Interceptors
 	streamInterceptors := []grpc.StreamServerInterceptor{}
 	unaryInterceptors := []grpc.UnaryServerInterceptor{}
+
+	// Log Requests - Use appropriate format depending on the encoding
+	if config.GetBool("server.log_requests") {
+		switch config.GetString("logger.encoding") {
+		case "stackdriver":
+			streamInterceptors = append(streamInterceptors, func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+				start := time.Now()
+				fields := []zapcore.Field{
+					zapdriver.HTTP(&zapdriver.HTTPPayload{
+						RequestMethod: "GRPC Stream",
+						RequestURL:    info.FullMethod,
+						Protocol:      "GRPC",
+					}),
+				}
+				zap.L().Info("GRPC Stream Start", fields...)
+				err := handler(srv, ss)
+				fields = append(fields, zap.Duration("duration", time.Since(start)))
+				if err != nil {
+					fields = append(fields, zap.String("error", err.Error()))
+				}
+				zap.L().Info("GRPC Stream Stop", fields...)
+				return err
+			})
+			unaryInterceptors = append(unaryInterceptors, func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+				start := time.Now()
+				resp, err := handler(ctx, req)
+				fields := []zapcore.Field{
+					zapdriver.HTTP(&zapdriver.HTTPPayload{
+						RequestMethod: "GRPC Request",
+						RequestURL:    info.FullMethod,
+						Protocol:      "GRPC",
+					}),
+					zap.Duration("duration", time.Since(start)),
+				}
+				if err != nil {
+					fields = append(fields, zap.String("error", err.Error()))
+				}
+				zap.L().Info("GRPC Request", fields...)
+				return resp, err
+			})
+
+			r.Use(func(next http.Handler) http.Handler {
+				return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					start := time.Now()
+					var requestID string
+					if reqID := r.Context().Value(middleware.RequestIDKey); reqID != nil {
+						requestID = reqID.(string)
+					}
+					ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
+					// Parse the request
+					next.ServeHTTP(ww, r)
+					// Don't log the version endpoint, it's too noisy
+					if r.RequestURI == "/version" {
+						return
+					}
+					// If the remote IP is being proxied, use the real IP
+					remoteIP := r.Header.Get("X-Forwarded-For")
+					if remoteIP == "" {
+						remoteIP = r.RemoteAddr
+					}
+					zap.L().Info("HTTP Request", []zapcore.Field{
+						zapdriver.HTTP(&zapdriver.HTTPPayload{
+							RequestMethod: r.Method,
+							RequestURL:    r.RequestURI,
+							RequestSize:   strconv.FormatInt(r.ContentLength, 10),
+							Status:        ww.Status(),
+							ResponseSize:  strconv.Itoa(ww.BytesWritten()),
+							UserAgent:     r.UserAgent(),
+							RemoteIP:      remoteIP,
+							Referer:       r.Referer(),
+							Latency:       fmt.Sprintf("%fs", time.Since(start).Seconds()),
+							Protocol:      r.Proto,
+						}),
+						zap.String("request-id", requestID),
+					}...)
+				})
+			})
+		default:
+			streamInterceptors = append(streamInterceptors, func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+				start := time.Now()
+				fields := []zapcore.Field{
+					zap.String("request", info.FullMethod),
+					zap.String("method", "GRPC Stream"),
+					zap.String("package", "server.request"),
+				}
+				zap.L().Info("GRPC Stream Start", fields...)
+				err := handler(srv, ss)
+				fields = append(fields, zap.Duration("duration", time.Since(start)))
+				if err != nil {
+					fields = append(fields, zap.String("error", err.Error()))
+				}
+				return err
+			})
+			unaryInterceptors = append(unaryInterceptors, func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+				start := time.Now()
+				resp, err := handler(ctx, req)
+				fields := []zapcore.Field{
+					zap.String("request", info.FullMethod),
+					zap.String("method", "GRPC"),
+					zap.String("package", "server.request"),
+					zap.Duration("duration", time.Since(start)),
+				}
+				if err != nil {
+					fields = append(fields, zap.String("error", err.Error()))
+				}
+				zap.L().Info("GRPC Request", fields...)
+				return resp, err
+			})
+
+			r.Use(func(next http.Handler) http.Handler {
+				return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					start := time.Now()
+					var requestID string
+					if reqID := r.Context().Value(middleware.RequestIDKey); reqID != nil {
+						requestID = reqID.(string)
+					}
+					ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
+					next.ServeHTTP(ww, r)
+
+					// Don't log the version endpoint, it's too noisy
+					if r.RequestURI == "/version" {
+						return
+					}
+
+					fields := []zapcore.Field{
+						zap.Int("status", ww.Status()),
+						zap.Duration("duration", time.Since(start)),
+						zap.String("request", r.RequestURI),
+						zap.String("method", r.Method),
+						zap.String("package", "server.request"),
+					}
+					if requestID != "" {
+						fields = append(fields, zap.String("request-id", requestID))
+					}
+					// If we have an x-Forwarded-For header, use that for the remote
+					if forwardedFor := r.Header.Get("X-Forwarded-For"); forwardedFor != "" {
+						fields = append(fields, zap.String("remote", forwardedFor))
+					} else {
+						fields = append(fields, zap.String("remote", r.RemoteAddr))
+					}
+					zap.L().Info("HTTP Request", fields...)
+				})
+			})
+		}
+	}
 
 	// GRPC Server Options
 	serverOptions := []grpc.ServerOption{
