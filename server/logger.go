@@ -17,6 +17,8 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+const grpcGatewayIdentifier = "grpcgateway" // Used to identify reuqests from the grpc gateway
+
 func loggerHTTPMiddlewareDefault(disabledEndpoints []string) func(http.Handler) http.Handler {
 	// Make a map lookup for disabled endpoints
 	disabled := make(map[string]struct{})
@@ -299,7 +301,7 @@ func grpcMetadataGetFirst(ctx context.Context, key string) string {
 }
 
 func fromGRPCGateway(ctx context.Context) bool {
-	if grpcMetadataGetFirst(ctx, "grpcgateway-accept") != "" {
+	if grpcMetadataGetFirst(ctx, grpcGatewayIdentifier) != "" {
 		return true
 	}
 	return false

@@ -25,6 +25,7 @@ import (
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/reflection"
 )
 
@@ -169,6 +170,9 @@ func (s *Server) ListenAndServe() error {
 	// Setup the GRPC gateway
 	grpcGatewayMux := gwruntime.NewServeMux(
 		gwruntime.WithMarshalerOption(gwruntime.MIMEWildcard, &JSONMarshaler{}), // Use encoding/json for all encoding/decoding
+		gwruntime.WithMetadata(func(ctx context.Context, r *http.Request) metadata.MD { // Used to identify requests from the grpc gateway
+			return metadata.New(map[string]string{grpcGatewayIdentifier: grpcGatewayIdentifier})
+		}),
 	)
 	// If the main router did not find and endpoint, pass it to the grpcGateway
 	s.router.NotFound(func(w http.ResponseWriter, r *http.Request) {
