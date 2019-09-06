@@ -11,9 +11,9 @@ TOOLS := ${GOPATH}/bin/go-bindata \
 	${GOPATH}/bin/protoc-gen-grpc-gateway \
 	${GOPATH}/bin/protoc-gen-swagger
 export PROTOBUF_INCLUDES = -I. -I/usr/include -I$(shell go list -e -f '{{.Dir}}' .) -I$(shell go list -e -f '{{.Dir}}' github.com/grpc-ecosystem/grpc-gateway/runtime)/../third_party/googleapis
-PROTOS := ./gogrpcapi/thing.pb.go \
-	./server/rpc/thing.pb.gw.go \
-	./server/rpc/version.pb.gw.go
+PROTOS := ./thingrpc/thing.pb.go \
+	./thingrpc/thingrpc.pb.gw.go \
+	./server/versionrpc/version.pb.gw.go
 
 .PHONY: default
 default: ${EXECUTABLE}
@@ -53,7 +53,7 @@ ${MIGRATIONDIR}/bindata.go: ${MIGRATIONS}
 
 .PHONY: mocks
 mocks: tools
-	mockery -dir ./gogrpcapi -name ThingStore
+	mockery -dir ./thingrpc -name ThingStore
 
 .PHONY: ${EXECUTABLE}
 ${EXECUTABLE}: tools ${PROTOS} ${MIGRATIONDIR}/bindata.go

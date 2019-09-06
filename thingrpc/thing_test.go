@@ -1,4 +1,4 @@
-package gogrpcapi
+package thingrpc
 
 import (
 	"testing"

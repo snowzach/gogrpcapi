@@ -26,8 +26,6 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/reflection"
-
-	"github.com/snowzach/gogrpcapi/gogrpcapi"
 )
 
 // Server is the GRPC server
@@ -36,7 +34,6 @@ type Server struct {
 	router     chi.Router
 	server     *http.Server
 	grpcServer *grpc.Server
-	thingStore gogrpcapi.ThingStore
 	gwRegFuncs []gwRegFunc
 }
 
@@ -44,7 +41,7 @@ type Server struct {
 type gwRegFunc func(ctx context.Context, mux *gwruntime.ServeMux, endpoint string, opts []grpc.DialOption) error
 
 // New will setup the server
-func New(thingStore gogrpcapi.ThingStore) (*Server, error) {
+func New() (*Server, error) {
 
 	// This router is used for http requests only, setup all of our middleware
 	r := chi.NewRouter()
@@ -67,13 +64,13 @@ func New(thingStore gogrpcapi.ThingStore) (*Server, error) {
 	if config.GetBool("server.log_requests") {
 		switch config.GetString("logger.encoding") {
 		case "stackdriver":
-			unaryInterceptors = append(unaryInterceptors, loggerGRPCUnaryStackdriver())
-			streamInterceptors = append(streamInterceptors, loggerGRPCStreamStackdriver())
-			r.Use(loggerHTTPMiddlewareStackdriver())
+			unaryInterceptors = append(unaryInterceptors, loggerGRPCUnaryStackdriver(config.GetStringSlice("server.log_disabled_grpc")))
+			streamInterceptors = append(streamInterceptors, loggerGRPCStreamStackdriver(config.GetStringSlice("server.log_disabled_grpc_stream")))
+			r.Use(loggerHTTPMiddlewareStackdriver(config.GetStringSlice("server.log_disabled_http")))
 		default:
-			unaryInterceptors = append(unaryInterceptors, loggerGRPCUnaryDefault())
-			streamInterceptors = append(streamInterceptors, loggerGRPCStreamDefault())
-			r.Use(loggerHTTPMiddlewareDefault())
+			unaryInterceptors = append(unaryInterceptors, loggerGRPCUnaryDefault(config.GetStringSlice("server.log_disabled_grpc")))
+			streamInterceptors = append(streamInterceptors, loggerGRPCStreamDefault(config.GetStringSlice("server.log_disabled_grpc_stream")))
+			r.Use(loggerHTTPMiddlewareDefault(config.GetStringSlice("server.log_disabled_http")))
 		}
 	}
 
@@ -92,12 +89,12 @@ func New(thingStore gogrpcapi.ThingStore) (*Server, error) {
 		logger:     zap.S().With("package", "server"),
 		router:     r,
 		grpcServer: g,
-		thingStore: thingStore,
 		gwRegFuncs: make([]gwRegFunc, 0),
 	}
 	s.server = &http.Server{
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.ProtoMajor == 2 && strings.Contains(r.Header.Get("Content-Type"), "application/grpc") {
+				// TODO: This is still supposedly slow/inefficient. Needs to be tested and possibly remediated
 				g.ServeHTTP(w, r)
 			} else {
 				s.router.ServeHTTP(w, r)
@@ -203,9 +200,14 @@ func (s *Server) ListenAndServe() error {
 
 }
 
-// gwReg will save a gateway registration function for later when the server is started
-func (s *Server) gwReg(gwrf gwRegFunc) {
+// GwReg will save a gateway registration function for later when the server is started
+func (s *Server) GwReg(gwrf gwRegFunc) {
 	s.gwRegFuncs = append(s.gwRegFuncs, gwrf)
+}
+
+// GRPCServer will return the grpc server to allow functions to register themselves
+func (s *Server) GRPCServer() *grpc.Server {
+	return s.grpcServer
 }
 
 // errorLogger is used for logging errors from the server

@@ -30,6 +30,9 @@ func init() {
 	config.SetDefault("server.certfile", "server.crt")
 	config.SetDefault("server.keyfile", "server.key")
 	config.SetDefault("server.log_requests", true)
+	config.SetDefault("server.log_disabled_http", []string{"/version"})
+	config.SetDefault("server.log_disabled_grpc", []string{"/versionrpc.VersionRPC/Version"})
+	config.SetDefault("server.log_disabled_grpc_stream", []string{})
 	config.SetDefault("server.profiler_enabled", false)
 	config.SetDefault("server.profiler_path", "/debug")
 	// GRPC JSON Marshaler Options

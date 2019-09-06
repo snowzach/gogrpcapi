@@ -6,7 +6,8 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/snowzach/gogrpcapi/conf"
-	"github.com/snowzach/gogrpcapi/gogrpcapi"
+	"github.com/snowzach/gogrpcapi/thingrpc/thingrpcserver"
+	"github.com/snowzach/gogrpcapi/thingrpc"
 	"github.com/snowzach/gogrpcapi/server"
 	"github.com/snowzach/gogrpcapi/store/postgres"
 )
@@ -22,7 +23,7 @@ var (
 		Long:  `Start API`,
 		Run: func(cmd *cli.Command, args []string) { // Initialize the databse
 
-			var thingStore gogrpcapi.ThingStore
+			var thingStore thingrpc.ThingStore
 			var err error
 			switch config.GetString("storage.type") {
 			case "postgres":
@@ -32,13 +33,26 @@ var (
 				logger.Fatalw("Database Error", "error", err)
 			}
 
-			// Create the server
-			s, err := server.New(thingStore)
+			// Create the GRPC/HTTP server
+			s, err := server.New()
 			if err != nil {
-				logger.Fatalw("Could not create server",
+				logger.Fatalw("Could not create grpc/http server",
 					"error", err,
 				)
 			}
+
+			// Create the rpcserver
+			rpcserver, err := thingrpcserver.New(thingStore)
+			if err != nil {
+				logger.Fatalw("Could not create thing rpcserver",
+					"error", err,
+				)
+			}
+
+			// Register the Thing RPC server to the GRPC Server
+			thingrpc.RegisterThingRPCServer(s.GRPCServer(), rpcserver)
+			s.GwReg(thingrpc.RegisterThingRPCHandlerFromEndpoint)
+
 			err = s.ListenAndServe()
 			if err != nil {
 				logger.Fatalw("Could not start server",

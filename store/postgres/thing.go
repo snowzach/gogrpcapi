@@ -4,14 +4,14 @@ import (
 	"context"
 	"database/sql"
 
-	"github.com/snowzach/gogrpcapi/gogrpcapi"
 	"github.com/snowzach/gogrpcapi/store"
+	"github.com/snowzach/gogrpcapi/thingrpc"
 )
 
 // ThingGetByID returns the the thing by ID
-func (c *Client) ThingGetById(ctx context.Context, id string) (*gogrpcapi.Thing, error) {
+func (c *Client) ThingGetById(ctx context.Context, id string) (*thingrpc.Thing, error) {
 
-	b := new(gogrpcapi.Thing)
+	b := new(thingrpc.Thing)
 	err := c.db.GetContext(ctx, b, `SELECT * FROM thing WHERE id = $1`, id)
 	if err == sql.ErrNoRows {
 		return nil, store.ErrNotFound
@@ -23,7 +23,7 @@ func (c *Client) ThingGetById(ctx context.Context, id string) (*gogrpcapi.Thing,
 }
 
 // ThingSave saves the thing
-func (c *Client) ThingSave(ctx context.Context, i *gogrpcapi.Thing) (string, error) {
+func (c *Client) ThingSave(ctx context.Context, i *thingrpc.Thing) (string, error) {
 
 	// Generate an ID if needed
 	if i.Id == "" {
@@ -55,9 +55,9 @@ func (c *Client) ThingDeleteById(ctx context.Context, id string) error {
 }
 
 // ThingFind gets things
-func (c *Client) ThingFind(ctx context.Context) ([]*gogrpcapi.Thing, error) {
+func (c *Client) ThingFind(ctx context.Context) ([]*thingrpc.Thing, error) {
 
-	var bs = make([]*gogrpcapi.Thing, 0)
+	var bs = make([]*thingrpc.Thing, 0)
 	err := c.db.SelectContext(ctx, &bs, `SELECT * FROM thing`)
 	if err == sql.ErrNoRows {
 		// No Error

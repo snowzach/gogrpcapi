@@ -1,10 +1,10 @@
 syntax="proto3";
-package server;
+package versionrpc;
 
 import "google/api/annotations.proto";
 import "google/protobuf/empty.proto";
 
-option go_package = "github.com/snowzach/gogrpcapi/server/rpc";
+option go_package = "github.com/snowzach/gogrpcapi/server/versionrpc";
 
 service VersionRPC {
 

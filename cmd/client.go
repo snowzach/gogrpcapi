@@ -14,10 +14,9 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 
-	"github.com/snowzach/gogrpcapi/server/rpc"
+	"github.com/snowzach/gogrpcapi/thingrpc"
+	"github.com/snowzach/gogrpcapi/server/versionrpc"
 )
-
-var ()
 
 func init() {
 
@@ -44,7 +43,7 @@ func init() {
 			defer conn.Close()
 
 			// gRPC version Client
-			versionClient := rpc.NewVersionRPCClient(conn)
+			versionClient := versionrpc.NewVersionRPCClient(conn)
 
 			// Make RPC call
 			version, err := versionClient.Version(context.Background(), &emptypb.Empty{})
@@ -55,7 +54,7 @@ func init() {
 			fmt.Printf("Version: %s\n", version.Version)
 
 			// gRPC thing Client
-			thingClient := rpc.NewThingRPCClient(conn)
+			thingClient := thingrpc.NewThingRPCClient(conn)
 
 			// Make RPC call
 			things, err := thingClient.ThingFind(context.Background(), &emptypb.Empty{})

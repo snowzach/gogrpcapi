@@ -3,7 +3,8 @@ package server
 import (
 	"net/http"
 
-	"github.com/snowzach/gogrpcapi/server/rpc"
+	"github.com/snowzach/gogrpcapi/server/versionrpc"
+	"github.com/snowzach/gogrpcapi/server/versionrpc/versionrpcserver"
 )
 
 // SetupRoutes configures all the routes for this service
@@ -13,9 +14,7 @@ func (s *Server) SetupRoutes() {
 	s.router.Get("/none", func(w http.ResponseWriter, r *http.Request) {})
 
 	// Register RPC Services
-	rpc.RegisterVersionRPCServer(s.grpcServer, s)
-	s.gwReg(rpc.RegisterVersionRPCHandlerFromEndpoint)
-	rpc.RegisterThingRPCServer(s.grpcServer, s)
-	s.gwReg(rpc.RegisterThingRPCHandlerFromEndpoint)
+	versionrpc.RegisterVersionRPCServer(s.GRPCServer(), versionrpcserver.New())
+	s.GwReg(versionrpc.RegisterVersionRPCHandlerFromEndpoint)
 
 }

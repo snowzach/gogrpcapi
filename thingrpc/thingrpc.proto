@@ -1,12 +1,12 @@
 syntax="proto3";
-package server;
+package thingrpc;
 
 import "google/api/annotations.proto";
 import "google/protobuf/empty.proto";
 
-import "gogrpcapi/thing.proto";
+import "thingrpc/thing.proto";
 
-option go_package = "github.com/snowzach/gogrpcapi/server/rpc";
+option go_package = "github.com/snowzach/gogrpcapi/thingrpc";
 
 service ThingRPC {
 
@@ -16,13 +16,13 @@ service ThingRPC {
         };
     }
 
-    rpc ThingGet(ThingId) returns (gogrpcapi.Thing) {
+    rpc ThingGet(ThingId) returns (thingrpc.Thing) {
         option (google.api.http) = {
             get: "/things/{id}"
         };
     }
 
-    rpc ThingSave(gogrpcapi.Thing) returns (ThingId) {
+    rpc ThingSave(thingrpc.Thing) returns (ThingId) {
         option (google.api.http) = {
             post: "/things"
             body: "*"
@@ -45,5 +45,5 @@ message ThingId {
 }
 
 message ThingFindResponse {
-    repeated gogrpcapi.Thing data = 1;
+    repeated thingrpc.Thing data = 1;
 }

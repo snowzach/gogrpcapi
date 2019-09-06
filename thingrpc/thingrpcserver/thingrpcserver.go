@@ -1,4 +1,4 @@
-package server
+package thingrpcserver
 
 import (
 	"context"
@@ -7,27 +7,51 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 
-	"github.com/snowzach/gogrpcapi/gogrpcapi"
-	"github.com/snowzach/gogrpcapi/server/rpc"
 	"github.com/snowzach/gogrpcapi/store"
+	"github.com/snowzach/gogrpcapi/thingrpc"
 )
 
+type thingRPCServer struct {
+	thingStore thingrpc.ThingStore
+}
+
+// New returns a new rpc server
+func New(ts thingrpc.ThingStore) (thingrpc.ThingRPCServer, error) {
+
+	return newServer(ts)
+
+}
+
+func newServer(ts thingrpc.ThingStore) (*thingRPCServer, error) {
+
+	return &thingRPCServer{
+		thingStore: ts,
+	}, nil
+
+}
+
+// AuthFuncOverride is used if you want to override default authentication for any endpoint
+// This disables all authentication for any thingRPC calls
+func (s *thingRPCServer) AuthFuncOverride(ctx context.Context, fullMethodName string) (context.Context, error) {
+	return ctx, nil
+}
+
 // ThingFind returns all things
-func (s *Server) ThingFind(ctx context.Context, _ *emptypb.Empty) (*rpc.ThingFindResponse, error) {
+func (s *thingRPCServer) ThingFind(ctx context.Context, _ *emptypb.Empty) (*thingrpc.ThingFindResponse, error) {
 
 	bs, err := s.thingStore.ThingFind(ctx)
 	if err != nil {
 		return nil, grpc.Errorf(codes.Internal, "%s", err)
 	}
 
-	return &rpc.ThingFindResponse{
+	return &thingrpc.ThingFindResponse{
 		Data: bs,
 	}, nil
 
 }
 
 // ThingGet fetches a thing by ID
-func (s *Server) ThingGet(ctx context.Context, request *rpc.ThingId) (*gogrpcapi.Thing, error) {
+func (s *thingRPCServer) ThingGet(ctx context.Context, request *thingrpc.ThingId) (*thingrpc.Thing, error) {
 
 	if request.Id == "" {
 		return nil, grpc.Errorf(codes.Internal, "Invalid ID")
@@ -44,21 +68,21 @@ func (s *Server) ThingGet(ctx context.Context, request *rpc.ThingId) (*gogrpcapi
 }
 
 // ThingSave creates or updates a thing
-func (s *Server) ThingSave(ctx context.Context, b *gogrpcapi.Thing) (*rpc.ThingId, error) {
+func (s *thingRPCServer) ThingSave(ctx context.Context, b *thingrpc.Thing) (*thingrpc.ThingId, error) {
 
 	thingID, err := s.thingStore.ThingSave(ctx, b)
 	if err != nil {
 		return nil, grpc.Errorf(codes.Internal, "%s", err)
 	}
 
-	return &rpc.ThingId{
+	return &thingrpc.ThingId{
 		Id: thingID,
 	}, nil
 
 }
 
 // ThingDelete deletes a thing
-func (s *Server) ThingDelete(ctx context.Context, request *rpc.ThingId) (*emptypb.Empty, error) {
+func (s *thingRPCServer) ThingDelete(ctx context.Context, request *thingrpc.ThingId) (*emptypb.Empty, error) {
 
 	if request.Id == "" {
 		return nil, grpc.Errorf(codes.Internal, "Invalid ID")

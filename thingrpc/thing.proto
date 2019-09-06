@@ -1,0 +1,9 @@
+syntax="proto3";
+package thingrpc;
+
+option go_package = "github.com/snowzach/gogrpcapi/thingrpc";
+
+message Thing {
+    string id = 1;
+    string name = 2;
+}

@@ -1,4 +1,4 @@
-package server
+package thingrpcserver
 
 import (
 	"context"
@@ -7,9 +7,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 
-	"github.com/snowzach/gogrpcapi/gogrpcapi"
+	"github.com/snowzach/gogrpcapi/thingrpc"
 	"github.com/snowzach/gogrpcapi/mocks"
-	"github.com/snowzach/gogrpcapi/server/rpc"
 )
 
 func TestServerThingPost(t *testing.T) {
@@ -20,7 +19,7 @@ func TestServerThingPost(t *testing.T) {
 	assert.Nil(t, err)
 
 	// Create Item
-	i := &gogrpcapi.Thing{
+	i := &thingrpc.Thing{
 		Id:   "id",
 		Name: "name",
 	}
@@ -45,12 +44,12 @@ func TestServerThingGetAll(t *testing.T) {
 	assert.Nil(t, err)
 
 	// Create Item
-	i := []*gogrpcapi.Thing{
-		&gogrpcapi.Thing{
+	i := []*thingrpc.Thing{
+		&thingrpc.Thing{
 			Id:   "id1",
 			Name: "name1",
 		},
-		&gogrpcapi.Thing{
+		&thingrpc.Thing{
 			Id:   "id2",
 			Name: "name2",
 		},
@@ -76,7 +75,7 @@ func TestServerThingGet(t *testing.T) {
 	assert.Nil(t, err)
 
 	// Create Item
-	i := &gogrpcapi.Thing{
+	i := &thingrpc.Thing{
 		Id:   "id",
 		Name: "name",
 	}
@@ -84,7 +83,7 @@ func TestServerThingGet(t *testing.T) {
 	// Mock call to item store
 	ts.On("ThingGetById", mock.AnythingOfType("*context.emptyCtx"), "1234").Once().Return(i, nil)
 
-	response, err := s.ThingGet(context.Background(), &rpc.ThingId{Id: "1234"})
+	response, err := s.ThingGet(context.Background(), &thingrpc.ThingId{Id: "1234"})
 	assert.Nil(t, err)
 	assert.Equal(t, i, response)
 
@@ -103,7 +102,7 @@ func TestServerThingDelete(t *testing.T) {
 	// Mock call to item store
 	ts.On("ThingDeleteById", mock.AnythingOfType("*context.emptyCtx"), "1234").Once().Return(nil)
 
-	_, err = s.ThingDelete(context.Background(), &rpc.ThingId{Id: "1234"})
+	_, err = s.ThingDelete(context.Background(), &thingrpc.ThingId{Id: "1234"})
 	assert.Nil(t, err)
 
 	// Check remaining expectations
