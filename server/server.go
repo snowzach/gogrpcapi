@@ -65,13 +65,13 @@ func New() (*Server, error) {
 	if config.GetBool("server.log_requests") {
 		switch config.GetString("logger.encoding") {
 		case "stackdriver":
-			unaryInterceptors = append(unaryInterceptors, loggerGRPCUnaryStackdriver(config.GetStringSlice("server.log_disabled_grpc")))
+			unaryInterceptors = append(unaryInterceptors, loggerGRPCUnaryStackdriver(config.GetBool("server.log_requests_body"), config.GetStringSlice("server.log_disabled_grpc")))
 			streamInterceptors = append(streamInterceptors, loggerGRPCStreamStackdriver(config.GetStringSlice("server.log_disabled_grpc_stream")))
-			r.Use(loggerHTTPMiddlewareStackdriver(config.GetStringSlice("server.log_disabled_http")))
+			r.Use(loggerHTTPMiddlewareStackdriver(config.GetBool("server.log_requests_body"), config.GetStringSlice("server.log_disabled_http")))
 		default:
-			unaryInterceptors = append(unaryInterceptors, loggerGRPCUnaryDefault(config.GetStringSlice("server.log_disabled_grpc")))
+			unaryInterceptors = append(unaryInterceptors, loggerGRPCUnaryDefault(config.GetBool("server.log_requests_body"), config.GetStringSlice("server.log_disabled_grpc")))
 			streamInterceptors = append(streamInterceptors, loggerGRPCStreamDefault(config.GetStringSlice("server.log_disabled_grpc_stream")))
-			r.Use(loggerHTTPMiddlewareDefault(config.GetStringSlice("server.log_disabled_http")))
+			r.Use(loggerHTTPMiddlewareDefault(config.GetBool("server.log_requests_body"), config.GetStringSlice("server.log_disabled_http")))
 		}
 	}
 

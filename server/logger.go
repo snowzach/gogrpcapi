@@ -1,9 +1,11 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"net/http"
+	"net/http/httputil"
 	"strconv"
 	"time"
 
@@ -19,7 +21,7 @@ import (
 
 const grpcGatewayIdentifier = "grpcgateway" // Used to identify reuqests from the grpc gateway
 
-func loggerHTTPMiddlewareDefault(disabledEndpoints []string) func(http.Handler) http.Handler {
+func loggerHTTPMiddlewareDefault(logRequestBody bool, disabledEndpoints []string) func(http.Handler) http.Handler {
 	// Make a map lookup for disabled endpoints
 	disabled := make(map[string]struct{})
 	for _, d := range disabledEndpoints {
@@ -34,28 +36,36 @@ func loggerHTTPMiddlewareDefault(disabledEndpoints []string) func(http.Handler) 
 			}
 
 			start := time.Now()
-			var requestID string
-			if reqID := r.Context().Value(middleware.RequestIDKey); reqID != nil {
-				requestID = reqID.(string)
-			}
-			ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
-			next.ServeHTTP(ww, r)
 
-			// Don't log the version endpoint, it's too noisy
-			if r.RequestURI == "/version" {
-				return
+			ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
+
+			var response *bytes.Buffer
+			if logRequestBody {
+				response = new(bytes.Buffer)
+				ww.Tee(response)
 			}
+
+			next.ServeHTTP(ww, r)
 
 			fields := []zapcore.Field{
 				zap.Int("status", ww.Status()),
 				zap.Duration("duration", time.Since(start)),
-				zap.String("request", r.RequestURI),
+				zap.String("path", r.RequestURI),
 				zap.String("method", r.Method),
-				zap.String("package", "server.request"),
+				zap.String("package", "server.http"),
 			}
-			if requestID != "" {
-				fields = append(fields, zap.String("request-id", requestID))
+
+			if reqID := r.Context().Value(middleware.RequestIDKey); reqID != nil {
+				fields = append(fields, zap.String("request-id", reqID.(string)))
 			}
+
+			if logRequestBody {
+				if req, err := httputil.DumpRequest(r, true); err == nil {
+					fields = append(fields, zap.ByteString("request", req))
+				}
+				fields = append(fields, zap.ByteString("response", response.Bytes()))
+			}
+
 			// If we have an x-Forwarded-For header, use that for the remote
 			if forwardedFor := r.Header.Get("X-Forwarded-For"); forwardedFor != "" {
 				fields = append(fields, zap.String("remote", forwardedFor))
@@ -68,7 +78,7 @@ func loggerHTTPMiddlewareDefault(disabledEndpoints []string) func(http.Handler) 
 }
 
 // Returns a middleware function for logging requests
-func loggerHTTPMiddlewareStackdriver(disabledEndpoints []string) func(http.Handler) http.Handler {
+func loggerHTTPMiddlewareStackdriver(logRequestBody bool, disabledEndpoints []string) func(http.Handler) http.Handler {
 	// Make a map lookup for disabled endpoints
 	disabled := make(map[string]struct{})
 	for _, d := range disabledEndpoints {
@@ -83,19 +93,24 @@ func loggerHTTPMiddlewareStackdriver(disabledEndpoints []string) func(http.Handl
 			}
 
 			start := time.Now()
-			var requestID string
-			if reqID := r.Context().Value(middleware.RequestIDKey); reqID != nil {
-				requestID = reqID.(string)
-			}
+
 			ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
-			// Parse the request
+
+			var response *bytes.Buffer
+			if logRequestBody {
+				response = new(bytes.Buffer)
+				ww.Tee(response)
+			}
+
 			next.ServeHTTP(ww, r)
+
 			// If the remote IP is being proxied, use the real IP
 			remoteIP := r.Header.Get("X-Forwarded-For")
 			if remoteIP == "" {
 				remoteIP = r.RemoteAddr
 			}
-			zap.L().Info("HTTP Request", []zapcore.Field{
+
+			fields := []zapcore.Field{
 				zapdriver.HTTP(&zapdriver.HTTPPayload{
 					RequestMethod: r.Method,
 					RequestURL:    r.RequestURI,
@@ -108,13 +123,26 @@ func loggerHTTPMiddlewareStackdriver(disabledEndpoints []string) func(http.Handl
 					Latency:       fmt.Sprintf("%fs", time.Since(start).Seconds()),
 					Protocol:      r.Proto,
 				}),
-				zap.String("request-id", requestID),
-			}...)
+				zap.String("package", "server.http"),
+			}
+
+			if reqID := r.Context().Value(middleware.RequestIDKey); reqID != nil {
+				fields = append(fields, zap.String("request-id", reqID.(string)))
+			}
+
+			if logRequestBody {
+				if req, err := httputil.DumpRequest(r, true); err == nil {
+					fields = append(fields, zap.ByteString("request", req))
+				}
+				fields = append(fields, zap.ByteString("response", response.Bytes()))
+			}
+
+			zap.L().Info("HTTP Request", fields...)
 		})
 	}
 }
 
-func loggerGRPCUnaryDefault(disabledEndpoints []string) grpc.UnaryServerInterceptor {
+func loggerGRPCUnaryDefault(logRequestBody bool, disabledEndpoints []string) grpc.UnaryServerInterceptor {
 	// Make a map lookup for disabled endpoints
 	disabled := make(map[string]struct{})
 	for _, d := range disabledEndpoints {
@@ -129,7 +157,7 @@ func loggerGRPCUnaryDefault(disabledEndpoints []string) grpc.UnaryServerIntercep
 		start := time.Now()
 		resp, err := handler(ctx, req)
 		fields := []zapcore.Field{
-			zap.String("request", info.FullMethod),
+			zap.String("path", info.FullMethod),
 			zap.String("method", "GRPC"),
 			zap.String("package", "server.grpc"),
 			zap.Duration("duration", time.Since(start)),
@@ -145,6 +173,11 @@ func loggerGRPCUnaryDefault(disabledEndpoints []string) grpc.UnaryServerIntercep
 		if err != nil {
 			fields = append(fields, zap.String("error", err.Error()))
 		}
+
+		if logRequestBody {
+			fields = append(fields, zap.Any("request", req), zap.Any("response", resp))
+		}
+
 		zap.L().Info("GRPC Request", fields...)
 		return resp, err
 	}
@@ -164,7 +197,7 @@ func loggerGRPCStreamDefault(disabledEndpoints []string) grpc.StreamServerInterc
 
 		start := time.Now()
 		fields := []zapcore.Field{
-			zap.String("request", info.FullMethod),
+			zap.String("path", info.FullMethod),
 			zap.String("method", "GRPC Stream"),
 			zap.String("package", "server.grpc.stream"),
 		}
@@ -184,15 +217,17 @@ func loggerGRPCStreamDefault(disabledEndpoints []string) grpc.StreamServerInterc
 			zap.Duration("duration", time.Since(start)),
 			zap.String("status", status.Code(err).String()),
 		)
+
 		if err != nil {
 			fields = append(fields, zap.String("error", err.Error()))
 		}
+
 		zap.L().Info("GRPC Stream Complete", fields...)
 		return err
 	}
 }
 
-func loggerGRPCUnaryStackdriver(disabledEndpoints []string) grpc.UnaryServerInterceptor {
+func loggerGRPCUnaryStackdriver(logRequestBody bool, disabledEndpoints []string) grpc.UnaryServerInterceptor {
 	// Make a map lookup for disabled endpoints
 	disabled := make(map[string]struct{})
 	for _, d := range disabledEndpoints {
@@ -231,6 +266,10 @@ func loggerGRPCUnaryStackdriver(disabledEndpoints []string) grpc.UnaryServerInte
 
 		if err != nil {
 			fields = append(fields, zap.String("error", err.Error()))
+		}
+
+		if logRequestBody {
+			fields = append(fields, zap.Any("request", req), zap.Any("response", resp))
 		}
 
 		zap.L().Info("GRPC Request", fields...)
